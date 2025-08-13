@@ -37,7 +37,7 @@ echo -e "\033[0;33m]\033[1;37m -\033[1;32m OK !\033[1;37m"
 tput cnorm
 }
 res1() {
-wget https://raw.githubusercontent.com/xyzval/VVIP/main/Features/menu.zip
+wget https://raw.githubusercontent.com/alrel1408/AutoAlrelshop/main/Features/menu.zip
 wget -q -O /usr/bin/enc "https://raw.githubusercontent.com/bowowiwendi/WendyVpn/ABSTRAK/enc/encrypt" ; chmod +x /usr/bin/enc
 7z e -paskykenza123 menu.zip
 unzip menu.zip

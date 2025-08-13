@@ -12,7 +12,7 @@ mkdir -p "$TEMP_DIR"
 cd "$TEMP_DIR"
 
 echo "📦 Mengunduh file dari GitHub..."
-wget -q -O bot.zip https://github.com/xyzval/VVIP/archive/refs/heads/main.zip
+wget -q -O bot.zip https://github.com/alrel1408/AutoAlrelshop/archive/refs/heads/main.zip
 
 echo "📂 Mengekstrak file ZIP..."
 unzip -o -qq bot.zip
