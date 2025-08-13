@@ -645,8 +645,176 @@ print_success "Vnstat"
 function ins_openvpn(){
 clear
 print_install "Menginstall OpenVPN"
-wget ${REPO}files/openvpn &&  chmod +x openvpn && ./openvpn
-/etc/init.d/openvpn restart
+
+# Install OpenVPN and Easy-RSA
+apt install openvpn easy-rsa -y
+
+# Setup directories
+mkdir -p /etc/openvpn/server
+make-cadir /etc/openvpn/easy-rsa
+
+# Configure Easy-RSA
+cd /etc/openvpn/easy-rsa
+cat > vars << 'EOF'
+set_var EASYRSA_REQ_COUNTRY    "ID"
+set_var EASYRSA_REQ_PROVINCE   "Jakarta"
+set_var EASYRSA_REQ_CITY       "Jakarta"
+set_var EASYRSA_REQ_ORG        "ALRELSHOP"
+set_var EASYRSA_REQ_EMAIL      "admin@alrelshop.my.id"
+set_var EASYRSA_REQ_OU         "ALRELSHOP"
+set_var EASYRSA_ALGO           "ec"
+set_var EASYRSA_DIGEST         "sha512"
+EOF
+
+# Initialize PKI and generate certificates
+./easyrsa init-pki
+./easyrsa --batch build-ca nopass
+./easyrsa --batch build-server-full server nopass
+./easyrsa gen-dh
+openvpn --genkey secret pki/ta.key
+
+# Copy certificates
+cp pki/ca.crt pki/private/server.key pki/issued/server.crt pki/dh.pem pki/ta.key /etc/openvpn/server/
+
+# Create server configurations
+cat > /etc/openvpn/server/server-tcp.conf << 'EOFTCP'
+port 1194
+proto tcp
+dev tun
+ca ca.crt
+cert server.crt
+key server.key
+dh dh.pem
+auth SHA512
+tls-crypt ta.key
+topology subnet
+server 10.8.0.0 255.255.255.0
+ifconfig-pool-persist ipp.txt
+push "redirect-gateway def1 bypass-dhcp"
+push "dhcp-option DNS 8.8.8.8"
+push "dhcp-option DNS 8.8.4.4"
+keepalive 10 120
+cipher AES-256-CBC
+user nobody
+group nogroup
+persist-key
+persist-tun
+verb 3
+ncp-ciphers AES-256-GCM:AES-128-GCM
+auth SHA256
+keysize 256
+auth-user-pass-verify /etc/openvpn/auth_script.sh via-env
+username-as-common-name
+script-security 3
+EOFTCP
+
+cat > /etc/openvpn/server/server-udp.conf << 'EOFUDP'
+port 2200
+proto udp
+dev tun
+ca ca.crt
+cert server.crt
+key server.key
+dh dh.pem
+auth SHA512
+tls-crypt ta.key
+topology subnet
+server 10.9.0.0 255.255.255.0
+ifconfig-pool-persist ipp.txt
+push "redirect-gateway def1 bypass-dhcp"
+push "dhcp-option DNS 8.8.8.8"
+push "dhcp-option DNS 8.8.4.4"
+keepalive 10 120
+cipher AES-256-CBC
+user nobody
+group nogroup
+persist-key
+persist-tun
+verb 3
+ncp-ciphers AES-256-GCM:AES-128-GCM
+auth SHA256
+keysize 256
+auth-user-pass-verify /etc/openvpn/auth_script.sh via-env
+username-as-common-name
+script-security 3
+EOFUDP
+
+# Create auth script
+cat > /etc/openvpn/auth_script.sh << 'EOFAUTH'
+#!/bin/bash
+USER="$username"
+PASS="$password"
+if [[ -z "$USER" || -z "$PASS" ]]; then
+    exit 1
+fi
+if id "$USER" &>/dev/null; then
+    echo "$PASS" | su -c 'exit' "$USER" 2>/dev/null
+    exit $?
+else
+    exit 1
+fi
+EOFAUTH
+
+chmod +x /etc/openvpn/auth_script.sh
+
+# Enable and start services
+systemctl enable openvpn-server@server-tcp
+systemctl enable openvpn-server@server-udp
+systemctl start openvpn-server@server-tcp
+systemctl start openvpn-server@server-udp
+systemctl enable openvpn
+systemctl restart openvpn
+
+# Create client configs
+domain=$(cat /etc/xray/domain)
+mkdir -p /etc/openvpn/client
+
+cat > /etc/openvpn/client/tcp.ovpn << EOFCLIENT
+client
+dev tun
+proto tcp
+remote $domain 1194
+resolv-retry infinite
+route-method exe
+nobind
+persist-key
+persist-tun
+auth-user-pass
+comp-lzo
+verb 3
+EOFCLIENT
+
+cat > /etc/openvpn/client/udp.ovpn << EOFCLIENT2  
+client
+dev tun
+proto udp
+remote $domain 2200
+resolv-retry infinite
+route-method exe
+nobind
+persist-key
+persist-tun
+auth-user-pass
+comp-lzo
+verb 3
+EOFCLIENT2
+
+cat > /etc/openvpn/client/ssl.ovpn << EOFCLIENT3
+client
+dev tun
+proto tcp
+remote $domain 443
+resolv-retry infinite
+route-method exe
+nobind
+persist-key
+persist-tun
+auth-user-pass
+comp-lzo
+verb 3
+EOFCLIENT3
+
+cd /root
 print_success "OpenVPN"
 }
 clear
@@ -683,6 +851,63 @@ echo "Banner /etc/banner.txt" >>/etc/ssh/sshd_config
 sed -i 's@DROPBEAR_BANNER=""@DROPBEAR_BANNER="/etc/banner.txt"@g' /etc/default/dropbear
 wget -O /etc/banner.txt "${REPO}banner/issue.net"
 print_success "Fail2ban"
+}
+function ins_squid_proxy(){
+clear
+print_install "Menginstall Squid Proxy (Pengganti OHP)"
+apt install squid -y
+
+# Backup original config
+cp /etc/squid/squid.conf /etc/squid/squid.conf.bak
+
+# Create new squid config
+cat > /etc/squid/squid.conf << 'EOF'
+http_port 3128
+http_port 8080
+http_port 8181
+http_port 8282  
+http_port 8383
+
+acl localhost src 127.0.0.1/32 ::1
+acl to_localhost dst 127.0.0.0/8 0.0.0.0/32 ::1
+acl localnet src 10.0.0.0/8
+acl localnet src 172.16.0.0/12  
+acl localnet src 192.168.0.0/16
+acl localnet src fc00::/7
+acl localnet src fe80::/10
+
+acl SSL_ports port 443
+acl Safe_ports port 80
+acl Safe_ports port 21
+acl Safe_ports port 443
+acl Safe_ports port 70
+acl Safe_ports port 210
+acl Safe_ports port 1025-65535
+acl Safe_ports port 280
+acl Safe_ports port 488
+acl Safe_ports port 591
+acl Safe_ports port 777
+acl CONNECT method CONNECT
+
+http_access allow localhost
+http_access allow localnet
+http_access deny !Safe_ports
+http_access deny CONNECT !SSL_ports
+http_access deny all
+
+coredump_dir /var/spool/squid
+refresh_pattern ^ftp:           1440    20%     10080
+refresh_pattern ^gopher:        1440    0%      1440
+refresh_pattern -i (/cgi-bin/|\?) 0     0%      0
+refresh_pattern .               0       20%     4320
+
+forwarded_for delete
+via off
+EOF
+
+systemctl restart squid
+systemctl enable squid
+print_success "Squid Proxy (Pengganti OHP)"
 }
 function ins_epro(){
 clear
@@ -757,6 +982,7 @@ restart_service "haproxy"
 restart_service "cron"
 restart_service "xray"
 restart_service "ws"
+restart_service "squid"
 
 # Handle optional services
 if systemctl list-unit-files | grep -q "openvpn.service" || [ -f "/etc/init.d/openvpn" ]; then
@@ -873,7 +1099,7 @@ print_install "Enable Service"
 systemctl daemon-reload
 
 # Enable services with error handling
-services=("rc-local" "cron" "nginx" "xray" "haproxy")
+services=("rc-local" "cron" "nginx" "xray" "haproxy" "squid")
 for service in "${services[@]}"; do
     if systemctl list-unit-files | grep -q "$service.service"; then
         echo -e "${GREEN}Enabling $service...${NC}"
@@ -883,6 +1109,14 @@ for service in "${services[@]}"; do
         echo -e "${YELLOW}Service $service not found, skipping...${NC}"
     fi
 done
+
+# Enable OpenVPN services separately
+if systemctl list-unit-files | grep -q "openvpn-server@.service"; then
+    echo -e "${GREEN}Enabling OpenVPN services...${NC}"
+    systemctl enable --now openvpn-server@server-tcp
+    systemctl enable --now openvpn-server@server-udp
+    systemctl enable --now openvpn
+fi
 
 # Handle netfilter-persistent separately
 if systemctl list-unit-files | grep -q "netfilter-persistent.service"; then
@@ -918,6 +1152,7 @@ ins_SSHD
 ins_dropbear
 ins_vnstat
 ins_openvpn
+ins_squid_proxy
 ins_backup
 ins_swab
 ins_Fail2ban
