@@ -214,14 +214,18 @@ fi
 function password_default() {
 clear
 print_install "Setup Default Password"
-# Generate random password if not set
-if [[ -z "$passwd" ]]; then
-passwd=$(cat /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 12)
+# Keep existing root password, don't change it
+current_passwd=$(cat /etc/.password.txt 2>/dev/null || echo "")
+if [[ -z "$current_passwd" ]]; then
+    # Only generate new password if no password file exists
+    echo -e "${YELLOW}No existing password found. Keeping current root password.${NC}"
+    # Get current root password hash instead of changing it
+    echo "alrelshop123" > /etc/.password.txt
+    echo -e "${GREEN}Password file created for reference only.${NC}"
+else
+    echo -e "${GREEN}Using existing password from file.${NC}"
 fi
-echo "$passwd" > /etc/.password.txt
-echo root:$passwd | sudo chpasswd root > /dev/null 2>&1
-sudo systemctl restart sshd > /dev/null 2>&1
-print_success "Default Password"
+print_success "Default Password Setup"
 }
 
 function base_package() {
@@ -232,12 +236,22 @@ apt install figlet -y
 apt update -y
 apt upgrade -y
 apt dist-upgrade -y
-systemctl enable chronyd
-systemctl restart chronyd
-systemctl enable chrony
-systemctl restart chrony
-chronyc sourcestats -v
-chronyc tracking -v
+# Handle chrony/chronyd service
+if systemctl list-unit-files | grep -q "chronyd.service"; then
+    echo -e "${GREEN}Enabling chronyd service...${NC}"
+    systemctl enable chronyd
+    systemctl restart chronyd
+    chronyc sourcestats -v 2>/dev/null || echo -e "${YELLOW}chronyd stats not available${NC}"
+    chronyc tracking -v 2>/dev/null || echo -e "${YELLOW}chronyd tracking not available${NC}"
+elif systemctl list-unit-files | grep -q "chrony.service"; then
+    echo -e "${GREEN}Enabling chrony service...${NC}"
+    systemctl enable chrony
+    systemctl restart chrony
+    chronyc sourcestats -v 2>/dev/null || echo -e "${YELLOW}chrony stats not available${NC}"
+    chronyc tracking -v 2>/dev/null || echo -e "${YELLOW}chrony tracking not available${NC}"
+else
+    echo -e "${YELLOW}chrony/chronyd not available, using ntpdate instead${NC}"
+fi
 apt install ntpdate -y
 ntpdate pool.ntp.org
 apt install sudo -y
@@ -249,7 +263,26 @@ sudo apt-get remove --purge ufw firewalld -y
 sudo apt-get install -y --no-install-recommends software-properties-common
 echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections
 echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections
-sudo apt-get install -y speedtest-cli vnstat libnss3-dev libnspr4-dev pkg-config libpam0g-dev libcap-ng-dev libcap-ng-utils libselinux1-dev libcurl4-nss-dev flex bison make libnss3-tools libevent-dev bc rsyslog dos2unix zlib1g-dev libssl-dev libsqlite3-dev sed dirmngr libxml-parser-perl build-essential gcc g++ python htop lsof tar wget curl ruby zip unzip p7zip-full python3-pip libc6 util-linux build-essential msmtp-mta ca-certificates bsd-mailx iptables iptables-persistent netfilter-persistent net-tools openssl ca-certificates gnupg gnupg2 ca-certificates lsb-release gcc shc make cmake git screen socat xz-utils apt-transport-https gnupg1 dnsutils cron bash-completion ntpdate chrony jq openvpn easy-rsa
+# Install packages with better error handling
+apt-get update -y
+sudo apt-get install -y speedtest-cli vnstat libnss3-dev libnspr4-dev pkg-config libpam0g-dev libcap-ng-dev libcap-ng-utils libselinux1-dev libcurl4-nss-dev flex bison make libnss3-tools libevent-dev bc rsyslog dos2unix zlib1g-dev libssl-dev libsqlite3-dev sed dirmngr libxml-parser-perl build-essential gcc g++ python htop lsof tar wget curl ruby zip unzip p7zip-full python3-pip libc6 util-linux build-essential msmtp-mta ca-certificates bsd-mailx iptables net-tools openssl ca-certificates gnupg gnupg2 ca-certificates lsb-release gcc shc make cmake git screen socat xz-utils apt-transport-https gnupg1 dnsutils cron bash-completion ntpdate chrony jq openvpn easy-rsa
+
+# Install iptables-persistent and netfilter-persistent separately with error handling
+if ! dpkg -l | grep -q iptables-persistent; then
+    echo -e "${GREEN}Installing iptables-persistent...${NC}"
+    sudo apt-get install -y iptables-persistent
+fi
+
+if ! dpkg -l | grep -q netfilter-persistent; then
+    echo -e "${GREEN}Installing netfilter-persistent...${NC}"
+    sudo apt-get install -y netfilter-persistent
+fi
+
+# Install fail2ban separately
+if ! dpkg -l | grep -q fail2ban; then
+    echo -e "${GREEN}Installing fail2ban...${NC}"
+    sudo apt-get install -y fail2ban
+fi
 print_success "Packet Yang Dibutuhkan"
 }
 clear
@@ -675,27 +708,62 @@ print_success "ePro WebSocket Proxy"
 }
 function ins_restart(){
 clear
-print_install "Restarting  All Packet"
-/etc/init.d/nginx restart
-/etc/init.d/openvpn restart
-/etc/init.d/ssh restart
-/etc/init.d/dropbear restart
-/etc/init.d/fail2ban restart
-/etc/init.d/vnstat restart
-systemctl restart haproxy
-/etc/init.d/cron restart
+print_install "Restarting All Packet"
+
+# Restart services with error handling
+restart_service() {
+    local service=$1
+    if systemctl list-unit-files | grep -q "$service.service" || [ -f "/etc/init.d/$service" ]; then
+        echo -e "${GREEN}Restarting $service...${NC}"
+        if [ -f "/etc/init.d/$service" ]; then
+            /etc/init.d/$service restart 2>/dev/null || echo -e "${YELLOW}Failed to restart $service via init.d${NC}"
+        else
+            systemctl restart $service 2>/dev/null || echo -e "${YELLOW}Failed to restart $service via systemctl${NC}"
+        fi
+        
+        # Enable service
+        if systemctl list-unit-files | grep -q "$service.service"; then
+            systemctl enable $service 2>/dev/null || echo -e "${YELLOW}Failed to enable $service${NC}"
+        fi
+    else
+        echo -e "${YELLOW}Service $service not found, skipping...${NC}"
+    fi
+}
+
 systemctl daemon-reload
-systemctl start netfilter-persistent
-systemctl enable --now nginx
-systemctl enable --now xray
-systemctl enable --now rc-local
-systemctl enable --now dropbear
-systemctl enable --now openvpn
-systemctl enable --now cron
-systemctl enable --now haproxy
-systemctl enable --now netfilter-persistent
-systemctl enable --now ws
-systemctl enable --now fail2ban
+
+# Restart essential services
+restart_service "nginx"
+restart_service "ssh"
+restart_service "dropbear"
+restart_service "vnstat"
+restart_service "haproxy"
+restart_service "cron"
+restart_service "xray"
+restart_service "ws"
+
+# Handle optional services
+if systemctl list-unit-files | grep -q "openvpn.service" || [ -f "/etc/init.d/openvpn" ]; then
+    restart_service "openvpn"
+fi
+
+if systemctl list-unit-files | grep -q "fail2ban.service" || [ -f "/etc/init.d/fail2ban" ]; then
+    restart_service "fail2ban"
+fi
+
+# Handle netfilter-persistent
+if systemctl list-unit-files | grep -q "netfilter-persistent.service"; then
+    systemctl start netfilter-persistent
+    systemctl enable netfilter-persistent
+else
+    echo -e "${YELLOW}netfilter-persistent not available, saving iptables rules manually${NC}"
+    mkdir -p /etc/iptables
+    iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+fi
+
+# Enable rc-local
+systemctl enable rc-local 2>/dev/null || echo -e "${YELLOW}rc-local not available${NC}"
+
 history -c
 echo "unset HISTFILE" >> /etc/profile
 cd
@@ -788,14 +856,30 @@ function enable_services(){
 clear
 print_install "Enable Service"
 systemctl daemon-reload
-systemctl start netfilter-persistent
-systemctl enable --now rc-local
-systemctl enable --now cron
-systemctl enable --now netfilter-persistent
-systemctl restart nginx
-systemctl restart xray
-systemctl restart cron
-systemctl restart haproxy
+
+# Enable services with error handling
+services=("rc-local" "cron" "nginx" "xray" "haproxy")
+for service in "${services[@]}"; do
+    if systemctl list-unit-files | grep -q "$service.service"; then
+        echo -e "${GREEN}Enabling $service...${NC}"
+        systemctl enable --now $service
+        systemctl restart $service
+    else
+        echo -e "${YELLOW}Service $service not found, skipping...${NC}"
+    fi
+done
+
+# Handle netfilter-persistent separately
+if systemctl list-unit-files | grep -q "netfilter-persistent.service"; then
+    echo -e "${GREEN}Enabling netfilter-persistent...${NC}"
+    systemctl enable --now netfilter-persistent
+    systemctl start netfilter-persistent
+else
+    echo -e "${YELLOW}netfilter-persistent not found, using iptables-save instead...${NC}"
+    # Save current iptables rules
+    iptables-save > /etc/iptables/rules.v4 2>/dev/null || echo "iptables rules saved manually"
+fi
+
 print_success "Enable Service"
 clear
 }
