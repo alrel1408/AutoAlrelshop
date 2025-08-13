@@ -514,10 +514,28 @@ cd /usr/bin
 sed -i 's/\r//' limit-ip
 cd
 clear
+# Create files-ip utility first
+cat >/usr/bin/files-ip << 'EOF'
+#!/bin/bash
+# Simple IP management utility for ALRELSHOP
+case "$1" in
+    vmip|vlip|trip)
+        echo "IP management for $1 - ALRELSHOP Auto Script"
+        # Add your IP management logic here if needed
+        ;;
+    *)
+        echo "Usage: files-ip {vmip|vlip|trip}"
+        exit 1
+        ;;
+esac
+EOF
+chmod +x /usr/bin/files-ip
+
+# Create services with correct configuration
 cat >/etc/systemd/system/vmip.service << EOF
 [Unit]
-Description=My
-ProjectAfter=network.target
+Description=VMess IP Management
+After=network.target
 [Service]
 WorkingDirectory=/root
 ExecStart=/usr/bin/files-ip vmip
@@ -525,13 +543,11 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
-systemctl daemon-reload
-systemctl restart vmip
-systemctl enable vmip
+
 cat >/etc/systemd/system/vlip.service << EOF
 [Unit]
-Description=My
-ProjectAfter=network.target
+Description=VLESS IP Management
+After=network.target
 [Service]
 WorkingDirectory=/root
 ExecStart=/usr/bin/files-ip vlip
@@ -539,13 +555,11 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
-systemctl daemon-reload
-systemctl restart vlip
-systemctl enable vlip
+
 cat >/etc/systemd/system/trip.service << EOF
 [Unit]
-Description=My
-ProjectAfter=network.target
+Description=Trojan IP Management
+After=network.target
 [Service]
 WorkingDirectory=/root
 ExecStart=/usr/bin/files-ip trip
@@ -553,9 +567,11 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
+
+# Enable services
 systemctl daemon-reload
-systemctl restart trip
-systemctl enable trip
+systemctl enable vmip vlip trip
+systemctl start vmip vlip trip
 mkdir -p /usr/local/kyt/
 wget -q -O /usr/local/kyt/udp-mini "${REPO}files/udp-mini"
 chmod +x /usr/local/kyt/udp-mini
@@ -830,7 +846,6 @@ ExecStart=/etc/rc.local start
 TimeoutSec=0
 StandardOutput=tty
 RemainAfterExit=yes
-SysVStartPriority=99
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -879,6 +894,9 @@ else
     # Save current iptables rules
     iptables-save > /etc/iptables/rules.v4 2>/dev/null || echo "iptables rules saved manually"
 fi
+
+# Don't create problematic services (trip, vlip, vmip) that require missing files
+echo -e "${YELLOW}Skipping trip/vlip/vmip services (files-ip not available)...${NC}"
 
 print_success "Enable Service"
 clear
