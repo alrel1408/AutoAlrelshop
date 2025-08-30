@@ -1,0 +1,152 @@
+{
+  "info": {
+    "name": "Trojan Management API",
+    "description": "API Collection untuk mengelola akun Trojan berdasarkan script m-trojan AlrelShop Auto Script",
+    "version": "1.0.0"
+  },
+  "item": [
+    {
+      "name": "Server Info",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/trojan/info",
+          "host": ["{{base_url}}"],
+          "path": ["api", "trojan", "info"]
+        },
+        "description": "Mendapatkan informasi server dan API"
+      }
+    },
+    {
+      "name": "Create Account",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"username\": \"testuser\",\n    \"days\": 30,\n    \"quota_gb\": 10,\n    \"ip_limit\": 2\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/trojan/create",
+          "host": ["{{base_url}}"],
+          "path": ["api", "trojan", "create"]
+        },
+        "description": "Membuat akun trojan baru dengan konfigurasi custom"
+      }
+    },
+    {
+      "name": "Create Trial Account",
+      "request": {
+        "method": "POST", 
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/trojan/trial",
+          "host": ["{{base_url}}"],
+          "path": ["api", "trojan", "trial"]
+        },
+        "description": "Membuat akun trial trojan (1 hari, 1GB, 3 IP)"
+      }
+    },
+    {
+      "name": "List All Accounts",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/trojan/list",
+          "host": ["{{base_url}}"],
+          "path": ["api", "trojan", "list"]
+        },
+        "description": "Melihat daftar semua akun trojan"
+      }
+    },
+    {
+      "name": "Check Account Status",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/trojan/check/{{username}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "trojan", "check", "{{username}}"]
+        },
+        "description": "Mengecek status login dan usage akun trojan"
+      }
+    },
+    {
+      "name": "Get Account Config",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/trojan/config/{{username}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "trojan", "config", "{{username}}"]
+        },
+        "description": "Mendapatkan konfigurasi OpenClash untuk akun"
+      }
+    },
+    {
+      "name": "Renew Account",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"username\": \"testuser\",\n    \"days\": 60,\n    \"quota_gb\": 20,\n    \"ip_limit\": 3\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/trojan/renew",
+          "host": ["{{base_url}}"],
+          "path": ["api", "trojan", "renew"]
+        },
+        "description": "Memperpanjang dan update konfigurasi akun trojan"
+      }
+    },
+    {
+      "name": "Delete Account",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"username\": \"testuser\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/trojan/delete",
+          "host": ["{{base_url}}"],
+          "path": ["api", "trojan", "delete"]
+        },
+        "description": "Menghapus akun trojan dari sistem"
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000",
+      "description": "Base URL untuk Trojan Management API"
+    },
+    {
+      "key": "username", 
+      "value": "testuser",
+      "description": "Username untuk testing"
+    }
+  ]
+}

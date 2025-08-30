@@ -1,0 +1,96 @@
+#!/bin/bash
+# Color
+RED='\033[0;31m'
+NC='\033[0m'
+GREEN='\033[0;32m'
+ORANGE='\033[0;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+LIGHT='\033[0;37m'
+ISPVPS=$(cat /etc/xray/isp)
+CITY=$(cat /etc/xray/city)
+# ==========================================
+IP=$(curl -sS ipv4.icanhazip.com) || { echo "Gagal mendapatkan IP"; exit 1; }
+domain=$(cat /etc/xray/domain)
+date=$(date +"%Y-%m-%d")
+function send_log(){
+    # Bot pertama
+    CHATID1=$(grep -E "^#bot# " "/etc/bot/.bot.db" | cut -d ' ' -f 3)
+    KEY1=$(grep -E "^#bot# " "/etc/bot/.bot.db" | cut -d ' ' -f 2)
+    TIME="10"
+    TEXT="
+<code>◇━━━━━━━━━━━━━━━━━━━━━━◇</code>
+        <b>📦BACKUP YOUR VPS📦</b>
+<code>◇━━━━━━━━━━━━━━━━━━━━━━◇</code>
+<b>DOMAIN      :</b> <code>🌐 $domain</code>
+<b>YOUR VPS IP :</b> <code>🖥️ $IP</code>
+<b>DATE        :</b> <code>📅 $date</code>
+<b>ISP         :</b> <code>📡 $ISPVPS</code>
+<b>LOCATION    :</b> <code>📍  $CITY</code>
+<b>LINK BACKUP :</b> 🔗 $link
+<code>◇━━━━━━━━━━━━━━━━━━━━━━◇</code>
+"
+    # Kirim ke bot pertama
+    URL1="https://api.telegram.org/bot$KEY1/sendMessage"
+    curl -s --max-time $TIME -d "chat_id=$CHATID1&disable_web_page_preview=1&text=$TEXT&parse_mode=html" $URL1 >/dev/null
+}
+#email=$(cat /root/email)
+echo "Mohon bersabar proses backup sedang berlangsung!!!"
+rm -rf /root/backup
+mkdir -p /root/backup
+cp /etc/passwd backup/
+cp /etc/group backup/
+cp /etc/shadow backup/
+cp /etc/gshadow backup/
+cp /etc/crontab backup/
+cp /etc/vmess/.vmess.db backup/
+cp /etc/ssh/.ssh.db backup/
+cp /etc/vless/.vless.db backup/
+cp /etc/trojan/.trojan.db backup/
+cp /etc/shadowsocks/.shadowsocks.db backup/
+cp -r /etc/kyt/limit backup/
+cp -r /etc/vmess backup/
+cp -r /etc/trojan backup/
+cp -r /etc/vless backup/
+cp -r /etc/shadowsock backup/
+cp -r /var/lib/kyt/ backup/kyt 
+cp -r /etc/xray backup/xray
+cp -r /var/www/html/ backup/html
+cd /root
+zip -r WT-$IP-$date.zip backup
+rclone copy /root/WT-$IP-$date.zip del:backup/ || { echo "Rclone copy failed"; exit 1; }  # Menangani kesalahan
+# ... kode setelah backup ...
+url=$(rclone link del:backup/WT-$IP-$date.zip) || { echo "Rclone link failed"; exit 1; }  # Menangani kesalahan
+if [ ! -f "/root/WT-$IP-$date.zip" ]; then
+    echo "File zip tidak ditemukan, proses gagal."
+    exit 1
+fi
+id=(`echo $url | grep '^https' | cut -d'=' -f2`)
+if [ -z "$id" ]; then
+    echo "ID tidak ditemukan, proses gagal."
+    exit 1
+fi
+link="https://drive.google.com/u/4/uc?id=${id}&export=download"
+#Documen="@/root/WT-$IP-$date.zip"
+clear
+send_log
+echo -e "
+Detail Backup 
+==================================
+SUCCESSFULL BACKUP YOUR VPS
+Please Save The Following Data
+__________________________________
+YOUR VPS IP : $IP
+DOMAIN      : $domain
+DATE        : $date
+ISP         : $ISPVPS
+LOCATION    : $CITY
+LINK BACKUP : $link
+==================================
+"
+echo "Silahkan copy Link dan restore di VPS baru"
+echo ""
+sleep 1 
+rm -rf /root/backup
+rm -rf /root/WT-$IP-$date.zip
